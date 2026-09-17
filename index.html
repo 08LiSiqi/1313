@@ -115,7 +115,7 @@
   .report-meta b { color: #1f2937; font-weight: 600; }
 
   /* ============================================================
-     图表卡片：磨砂 → 清晰的滚动显现动效
+     图表卡片：磨砂 → 清晰，上下滑动反复触发
      ============================================================ */
   .chart-card {
     margin-bottom: 22px;
@@ -123,9 +123,9 @@
     filter: blur(14px);
     transform: translateY(28px) scale(0.985);
     transition:
-      opacity 0.9s cubic-bezier(.22,.61,.36,1),
-      filter 0.9s cubic-bezier(.22,.61,.36,1),
-      transform 0.9s cubic-bezier(.22,.61,.36,1);
+      opacity 0.85s cubic-bezier(.22,.61,.36,1),
+      filter 0.85s cubic-bezier(.22,.61,.36,1),
+      transform 0.85s cubic-bezier(.22,.61,.36,1);
     will-change: opacity, filter, transform;
   }
   .chart-card.visible {
@@ -133,23 +133,27 @@
     filter: blur(0);
     transform: translateY(0) scale(1);
   }
-  .chart-card.no-anim {
-    transition: none !important;
-  }
-  /* 动效完成后移除 will-change，节省内存 */
+  /* 动效完成后移除 will-change，节省 GPU 资源 */
   .chart-card.done {
     will-change: auto;
+  }
+  /* 重置时禁用过渡，避免"模糊 → 清晰 → 模糊"的反向动画被看到 */
+  .chart-card.resetting {
+    transition: none !important;
+  }
+  .chart-card.no-anim {
+    transition: none !important;
   }
   .chart-card.collapsed .card-body {
     display: none;
   }
 
-  /* 移动端减弱动效，避免性能损耗 */
+  /* 移动端减弱模糊与位移，降低 GPU 负载 */
   @media (max-width: 640px) {
     .chart-card {
       filter: blur(8px);
       transform: translateY(20px) scale(0.99);
-      transition-duration: 0.7s;
+      transition-duration: 0.65s;
     }
   }
 
@@ -308,7 +312,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ============================================================
-     图表放大模态框（已回退到稳定版本）
+     图表放大模态框
      ============================================================ */
   .chart-modal {
     position: fixed; inset: 0;
@@ -1792,31 +1796,57 @@ function renderReport() {
   html += '</tbody></table>';
   document.getElementById('detailTable').innerHTML = html;
 
-  setTimeout(() => { activateVisibleCards(); resizeAllCharts(); }, 40);
+  setTimeout(() => { syncCardVisibility(); resizeAllCharts(); }, 40);
 }
 
 /* ============================================================
- *  卡片滚动渐入：磨砂 → 清晰
+ *  卡片滚动渐入：磨砂 → 清晰（上下滑动反复触发）
  * ============================================================ */
-const cardObserver = ('IntersectionObserver' in window)
-  ? new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const el = entry.target;
-          el.classList.add('visible');
-          // 过渡结束后移除 will-change，释放 GPU 资源
-          const onEnd = () => {
-            el.classList.add('done');
-            el.removeEventListener('transitionend', onEnd);
-          };
-          el.addEventListener('transitionend', onEnd);
-          // 兜底：1.2 秒后强制完成
-          setTimeout(() => el.classList.add('done'), 1200);
-          cardObserver.unobserve(el);
-        }
-      });
-    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' })
-  : null;
+let cardObserver = null;
+
+/** 让某张卡片立即进入"磨砂"待动画状态 */
+function setCardHidden(el) {
+  el.classList.add('resetting');
+  el.classList.remove('visible', 'done');
+  // 下一帧移除 resetting，恢复过渡
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      el.classList.remove('resetting');
+    });
+  });
+}
+
+/** 让某张卡片进入"清晰"状态，并启动过渡 */
+function setCardVisible(el) {
+  el.classList.remove('done');
+  // 强制一次样式读取，确保浏览器识别到状态变化
+  void el.offsetHeight;
+  el.classList.add('visible');
+  // 过渡结束后移除 will-change
+  const onEnd = () => {
+    el.classList.add('done');
+    el.removeEventListener('transitionend', onEnd);
+  };
+  el.addEventListener('transitionend', onEnd);
+  // 兜底：1 秒后强制移除 will-change
+  setTimeout(() => el.classList.add('done'), 1000);
+}
+
+if ('IntersectionObserver' in window) {
+  cardObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const el = entry.target;
+      if (entry.isIntersecting) {
+        setCardVisible(el);
+      } else {
+        setCardHidden(el);
+      }
+    });
+  }, {
+    threshold: 0,
+    rootMargin: '0px'
+  });
+}
 
 function observeAllCards() {
   if (!cardObserver) {
@@ -1824,19 +1854,27 @@ function observeAllCards() {
     return;
   }
   document.querySelectorAll('.chart-card').forEach(el => {
-    if (!el.classList.contains('visible')) cardObserver.observe(el);
+    // 若未在观察中，加入观察
+    if (!el.dataset.observed) {
+      el.dataset.observed = '1';
+      // 初始全部设为隐藏（磨砂），交给 observer 决定首次显现
+      setCardHidden(el);
+      cardObserver.observe(el);
+    }
   });
 }
 
-function activateVisibleCards() {
-  const cards = document.querySelectorAll('.chart-card:not(.visible)');
+/** 页面首次进入报表或视口变化时，同步一次状态 */
+function syncCardVisibility() {
+  if (!cardObserver) return;
   const vh = window.innerHeight || document.documentElement.clientHeight;
-  cards.forEach(c => {
-    const rect = c.getBoundingClientRect();
-    if (rect.top < vh - 20 && rect.bottom > 0) {
-      c.classList.add('visible');
-      if (cardObserver) cardObserver.unobserve(c);
-      setTimeout(() => c.classList.add('done'), 1200);
+  document.querySelectorAll('.chart-card').forEach(el => {
+    const rect = el.getBoundingClientRect();
+    const inView = rect.top < vh && rect.bottom > 0;
+    if (inView && !el.classList.contains('visible')) {
+      setCardVisible(el);
+    } else if (!inView && el.classList.contains('visible')) {
+      setCardHidden(el);
     }
   });
 }
@@ -1864,7 +1902,12 @@ function toggleCollapse(cardEl) {
         if (inst) inst.resize();
       });
     }, 60);
-    cardEl.classList.add('visible', 'done');
+    // 展开时若在视口内，直接呈现清晰状态
+    const rect = cardEl.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top < vh && rect.bottom > 0) {
+      cardEl.classList.add('visible', 'done');
+    }
   }
 }
 
@@ -1990,7 +2033,7 @@ function loadDemo() {
 }
 
 /* ============================================================
- *  图表放大模态框（回退到稳定版本）
+ *  图表放大模态框（稳定版本）
  * ============================================================ */
 let modalChartInst = null;
 let zoomState = { start: 0, end: 100 };
@@ -1999,7 +2042,6 @@ function buildModalOption(baseOpt) {
   const isMobile = window.innerWidth <= 640;
   const opt = Object.assign({}, baseOpt);
 
-  // grid 调整
   const baseGrid = baseOpt.grid || {};
   opt.grid = Object.assign({}, baseGrid, {
     left: isMobile ? 48 : (baseGrid.left || 58),
@@ -2008,7 +2050,6 @@ function buildModalOption(baseOpt) {
     bottom: isMobile ? 96 : 100
   });
 
-  // 图例位置
   if (baseOpt.legend) {
     opt.legend = Object.assign({}, baseOpt.legend, {
       bottom: isMobile ? 8 : 10,
@@ -2016,7 +2057,6 @@ function buildModalOption(baseOpt) {
     });
   }
 
-  // dataZoom
   if (baseOpt.series && baseOpt.series.length) {
     opt.dataZoom = [
       {
@@ -2073,13 +2113,11 @@ function openChartModal(chartId, title) {
   modal.classList.add('show');
   document.body.classList.add('modal-open');
 
-  // 清除旧实例
   if (modalChartInst) {
     try { modalChartInst.dispose(); } catch (e) {}
     modalChartInst = null;
   }
 
-  // 双 rAF 确保模态框布局稳定后，再初始化 ECharts
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const body = document.getElementById('chartModalBody');
@@ -2090,7 +2128,6 @@ function openChartModal(chartId, title) {
         const opt = buildModalOption(baseOpt);
         modalChartInst.setOption(opt, true);
 
-        // 同步缩放状态
         zoomState = { start: 0, end: 100 };
         modalChartInst.on('dataZoom', function() {
           try {
@@ -2239,7 +2276,7 @@ async function exportReport() {
   document.getElementById('rfWrap').classList.remove('open');
   closeChartModal();
 
-  // 强制展开所有卡片、停用动效、清除磨砂状态
+  // 强制展开所有卡片、停用动效、清除磨砂
   const cardRestore = [];
   document.querySelectorAll('.chart-card').forEach(c => {
     const wasCollapsed = c.classList.contains('collapsed');
@@ -2248,7 +2285,10 @@ async function exportReport() {
     if (wasCollapsed) c.classList.remove('collapsed');
     cardRestore.push(() => {
       c.classList.remove('no-anim', 'done');
-      if (!wasVisible) c.classList.remove('visible');
+      if (!wasVisible) {
+        // 导出前不可见的卡片，恢复为磨砂
+        setCardHidden(c);
+      }
       if (wasCollapsed) c.classList.add('collapsed');
     });
   });
@@ -2630,6 +2670,7 @@ function toast(msg) {
     clearTimeout(rt);
     rt = setTimeout(() => {
       resizeAllCharts();
+      syncCardVisibility();
       if (modalChartInst) modalChartInst.resize();
     }, 180);
   });
@@ -2637,17 +2678,9 @@ function toast(msg) {
   window.addEventListener('orientationchange', () => {
     setTimeout(() => {
       if (modalChartInst) modalChartInst.resize();
+      syncCardVisibility();
     }, 350);
   });
-
-  let scrollTimer = null;
-  window.addEventListener('scroll', () => {
-    if (scrollTimer) return;
-    scrollTimer = setTimeout(() => {
-      scrollTimer = null;
-      activateVisibleCards();
-    }, 120);
-  }, { passive: true });
 })();
 </script>
 </body>
