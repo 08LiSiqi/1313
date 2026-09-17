@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>学生成绩走势分析系统</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -16,6 +16,7 @@
     color: #1f2937;
     -webkit-font-smoothing: antialiased;
   }
+  body.modal-open { overflow: hidden; }
   .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 20px 20px; }
   h1 { font-size: 23px; margin: 0 0 6px; letter-spacing: .5px; }
   .sub { color: #6b7280; font-size: 13px; margin: 0 0 22px; line-height: 1.7; }
@@ -47,6 +48,13 @@
   .btn-primary:hover { background: #3f5ce0; border-color: #3f5ce0; }
   .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
   .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+  .btn-demo {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #047857;
+    font-weight: 600;
+  }
+  .btn-demo:hover { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
 
   .exam-item {
     display: flex; align-items: center; padding: 11px 14px; border: 1px solid #e9edf5;
@@ -60,7 +68,7 @@
   .exam-body { flex: 1 1 auto; min-width: 0; }
   .exam-name-input {
     border: 1px solid transparent; background: transparent; font-size: 14px; font-weight: 600;
-    color: #1f2937; padding: 3px 6px; border-radius: 6px; width: 100%; max-width: 420px;
+    color: #1f2937; padding: 3px 6px; border-radius: 6px; width: 100%; max-width: 460px;
     font-family: inherit;
   }
   .exam-name-input:hover { background: #f3f5fa; }
@@ -72,6 +80,7 @@
     padding: 1px 7px; border-radius: 20px; font-size: 11px; margin-right: 6px;
     font-weight: 600;
   }
+  .exam-meta .tag.title { background: #ecfdf5; color: #059669; }
   .exam-actions { display: flex; gap: 6px; flex: 0 0 auto; margin-left: 10px; }
   .exam-actions .btn { padding: 5px 9px; font-size: 12px; }
 
@@ -104,16 +113,114 @@
   .report-head h2 { margin: 0 0 12px; font-size: 19px; letter-spacing: .5px; }
   .report-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: #6b7280; }
   .report-meta b { color: #1f2937; font-weight: 600; }
-  .chart-card { margin-bottom: 22px; }
+
+  /* ============================================================
+     图表卡片：磨砂 → 清晰的滚动显现动效
+     ============================================================ */
+  .chart-card {
+    margin-bottom: 22px;
+    opacity: 0;
+    filter: blur(14px);
+    transform: translateY(28px) scale(0.985);
+    transition:
+      opacity 0.9s cubic-bezier(.22,.61,.36,1),
+      filter 0.9s cubic-bezier(.22,.61,.36,1),
+      transform 0.9s cubic-bezier(.22,.61,.36,1);
+    will-change: opacity, filter, transform;
+  }
+  .chart-card.visible {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+  .chart-card.no-anim {
+    transition: none !important;
+  }
+  /* 动效完成后移除 will-change，节省内存 */
+  .chart-card.done {
+    will-change: auto;
+  }
+  .chart-card.collapsed .card-body {
+    display: none;
+  }
+
+  /* 移动端减弱动效，避免性能损耗 */
+  @media (max-width: 640px) {
+    .chart-card {
+      filter: blur(8px);
+      transform: translateY(20px) scale(0.99);
+      transition-duration: 0.7s;
+    }
+  }
+
   .chart-card h3 {
     font-size: 14px; margin: 0 0 10px; color: #374151; font-weight: 600;
     border-left: 3px solid #4f6ef7; padding-left: 9px; line-height: 1.3;
-    display: flex; align-items: center; flex-wrap: wrap;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    min-height: 32px;
   }
-  .chart-card h3 small { font-weight: 400; color: #9aa3b2; font-size: 12px; margin-left: 6px; }
+  .chart-card h3 .h3-title { font-size: 14px; font-weight: 600; color: #374151; }
+  .chart-card h3 small { font-weight: 400; color: #9aa3b2; font-size: 12px; }
+  .chart-card h3 .h3-actions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
   .chart { width: 100%; height: 300px; }
 
-  .sf-wrap { position: relative; display: inline-block; margin-left: 10px; }
+  .zoom-btn {
+    border: 1px solid #d8dee9; background: #fff; color: #6b7280;
+    padding: 5px 12px; border-radius: 8px; font-size: 12.5px;
+    cursor: pointer; font-family: inherit; transition: .15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-weight: 500; white-space: nowrap;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 32px;
+  }
+  .zoom-btn:hover { background: #f8faff; border-color: #a5b4fc; color: #4f6ef7; }
+  .zoom-btn:active { transform: scale(.96); background: #eef2ff; }
+  .zoom-btn svg { width: 13px; height: 13px; flex: 0 0 auto; }
+
+  .collapse-btn {
+    border: 1px solid #d8dee9;
+    background: #fff;
+    color: #9aa3b2;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: .15s;
+    flex: 0 0 auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .collapse-btn:hover {
+    background: #f8faff;
+    border-color: #a5b4fc;
+    color: #4f6ef7;
+  }
+  .collapse-btn:active { transform: scale(.94); }
+  .collapse-btn .triangle {
+    display: inline-block;
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+    transform-origin: 50% 45%;
+  }
+  .chart-card.collapsed .collapse-btn .triangle {
+    transform: rotate(-90deg);
+  }
+  .chart-card.collapsed h3 {
+    margin-bottom: 0;
+  }
+
+  .sf-wrap { position: relative; display: inline-block; }
   .sf-btn {
     border: 1px solid #d8dee9; background: #fff; border-radius: 8px;
     padding: 4px 10px; font-size: 12.5px; color: #4b5563; cursor: pointer;
@@ -177,13 +284,14 @@
     position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 20px);
     background: #1f2937; color: #fff; padding: 11px 22px; border-radius: 10px;
     font-size: 13.5px; opacity: 0; pointer-events: none; transition: .25s; z-index: 999;
+    max-width: 88vw; text-align: center;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   #exportMask {
     position: fixed; inset: 0; background: rgba(15, 23, 42, .5);
     display: none; align-items: center; justify-content: center;
-    z-index: 2000; backdrop-filter: blur(2px);
+    z-index: 2000;
   }
   #exportMask.show { display: flex; }
   #exportMask .box {
@@ -198,6 +306,133 @@
   }
   #exportMask .txt { font-size: 13.5px; color: #4b5563; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============================================================
+     图表放大模态框（已回退到稳定版本）
+     ============================================================ */
+  .chart-modal {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,.72);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1500; padding: 20px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .chart-modal.show { display: flex; }
+  .chart-modal-content {
+    position: relative;
+    background: #fff; border-radius: 16px;
+    width: min(1440px, 97vw);
+    height: min(880px, 94vh);
+    height: min(880px, 94dvh);
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,.35);
+  }
+  .chart-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 20px; border-bottom: 1px solid #eef2ff;
+    font-weight: 600; font-size: 15px; color: #1f2937;
+    flex: 0 0 auto;
+    gap: 10px;
+  }
+  .chart-modal-head .mh-title-wrap { min-width: 0; flex: 1 1 auto; }
+  .chart-modal-head .mh-title {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chart-modal-head .mh-hint {
+    font-weight: 400; font-size: 12px; color: #9aa3b2; margin-top: 2px;
+  }
+  .chart-modal-head button#chartModalClose {
+    border: none; background: transparent; font-size: 20px;
+    cursor: pointer; color: #9aa3b2; padding: 6px 12px; border-radius: 8px;
+    transition: .15s; font-family: inherit;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .chart-modal-head button#chartModalClose:hover { background: #f3f5fa; color: #374151; }
+  .chart-modal-body {
+    flex: 1 1 auto; min-height: 0; position: relative;
+    overscroll-behavior: contain;
+  }
+  #chartModalBody { width: 100%; height: 100%; }
+
+  .mobile-zoom-controls {
+    display: none;
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    gap: 6px;
+    background: rgba(255,255,255,.96);
+    border: 1px solid #e3e8f2;
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    z-index: 20;
+  }
+  .mobile-zoom-controls button {
+    width: 42px;
+    height: 42px;
+    border: 1px solid #e3e8f2;
+    background: #fff;
+    border-radius: 10px;
+    font-size: 19px;
+    font-weight: 600;
+    color: #4b5563;
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: .15s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+  }
+  .mobile-zoom-controls button:active {
+    background: #eef2ff;
+    color: #4f6ef7;
+    transform: scale(.93);
+  }
+  .mobile-zoom-controls button[data-zoom="reset"] { font-size: 16px; }
+
+  @media (max-width: 640px) {
+    .chart-card h3 { font-size: 13px; gap: 6px; min-height: 40px; }
+    .chart-card h3 .h3-title { font-size: 13px; }
+    .chart-card h3 small { font-size: 11.5px; }
+    .zoom-btn {
+      padding: 8px 12px;
+      font-size: 13px;
+      min-height: 40px;
+      border-radius: 9px;
+    }
+    .zoom-btn svg { width: 14px; height: 14px; }
+    .zoom-btn span.txt { display: none; }
+    .collapse-btn {
+      width: 40px;
+      height: 40px;
+    }
+    .collapse-btn .triangle { width: 13px; height: 13px; }
+
+    .chart-modal { padding: 0; }
+    .chart-modal-content {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      max-height: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .chart-modal-head {
+      padding: 8px 8px 8px 14px;
+      font-size: 14px;
+      padding-top: max(8px, env(safe-area-inset-top));
+    }
+    .chart-modal-head .mh-hint { display: none; }
+    .mobile-zoom-controls { display: flex; }
+  }
 </style>
 </head>
 <body>
@@ -205,22 +440,34 @@
 
   <h1>📊 学生成绩走势分析系统</h1>
   <p class="sub">
-    上传多次考试的 Excel 成绩表，系统自动识别表头与准考证号，生成每位学生的各科排名、总分与班级／级部排名走势图，并支持一键导出报表截图。
+    上传多次考试的 Excel 成绩表，自动识别表头与准考证号，生成每位学生的各科排名、总分与班级／级部排名走势图，支持放大查看与导出截图。
   </p>
 
   <div class="card">
-    <div class="card-title"><span class="dot"></span>1. 上传成绩表<small>支持多选，一个文件可包含多张工作表</small></div>
+    <div class="card-title"><span class="dot"></span>1. 上传成绩表<small>支持多选，一个文件可含多张工作表</small></div>
+
+    <div style="margin-bottom:14px; display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
+      <label style="font-size:13.5px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="radio" name="uploadMode" value="normal" checked> 普通成绩表模式
+      </label>
+      <label style="font-size:13.5px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="radio" name="uploadMode" value="jiaowu"> 教务处成绩报表模式
+      </label>
+      <span class="hint" id="modeHint">普通模式：每张工作表识别为一次考试</span>
+    </div>
+
     <div class="dropzone" id="dropzone">
       <div class="dz-icon">📁</div>
       <div class="dz-main">点击选择文件，或将 Excel 拖拽到此处</div>
-      <div class="dz-sub">
+      <div class="dz-sub" id="dzSub">
         支持 .xlsx / .xls / .csv &nbsp;·&nbsp; 可一次选择多个文件<br>
-        若一个文件内含多张工作表，会分别识别为独立考试<br>
-        表头需包含：准考证号、姓名、各科成绩（语文/数学/英语…）、总分、班级排名、级部排名
+        一个文件内多张工作表会分别识别为独立考试，并自动读取表头上方的标题行<br>
+        识别科目：语文、数学、英语、物理、化学、生物、地理、政治、历史
       </div>
     </div>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" style="display:none">
     <div style="margin-top:14px; display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
+      <button class="btn btn-demo" id="btnDemo">🎬 载入示例数据</button>
       <button class="btn btn-danger" id="btnClear">清空全部</button>
       <span class="hint">建议：准考证号列设置为「文本格式」，避免前导 0 丢失</span>
     </div>
@@ -233,6 +480,11 @@
 
   <div class="card" id="studentCard" style="display:none;">
     <div class="card-title"><span class="dot"></span>3. 选择学生</div>
+    <div id="classSelectWrap" style="margin-bottom:12px; display:none;">
+      <select id="classSelect" style="width:100%; max-width:460px; padding:10px 14px; border:1px solid #d8dee9; border-radius:10px; font-size:14px; font-family:inherit; outline:none; background:#fff;">
+        <option value="">全部班级</option>
+      </select>
+    </div>
     <div class="combo">
       <input type="text" id="studentSearch" placeholder="输入姓名或准考证号搜索…" autocomplete="off">
       <div class="combo-list" id="studentList"></div>
@@ -258,36 +510,120 @@
       </div>
     </div>
 
-    <div class="chart-card">
+    <div class="chart-card" id="cardSubjects">
       <h3>
-        各科排名走势
-        <small>数值越小排名越靠前，鼠标悬停查看该点得分与排名</small>
+        <span class="h3-title">各科排名走势</span>
+        <small>悬停查看该点得分与排名</small>
         <span class="sf-wrap" id="sfWrap">
           <button type="button" class="sf-btn" id="sfBtn">全部 <span class="caret">▼</span></button>
           <div class="sf-panel" id="sfPanel"></div>
         </span>
+        <span class="h3-actions">
+          <button type="button" class="zoom-btn" data-chart="chartSubjects" data-title="各科排名走势" title="放大查看">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+            <span class="txt">放大</span>
+          </button>
+          <button type="button" class="collapse-btn" data-target="cardSubjects" title="折叠 / 展开">
+            <svg class="triangle" viewBox="0 0 12 12" width="11" height="11"><path d="M2.5 4.2 L6 7.6 L9.5 4.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </span>
       </h3>
-      <div class="chart" id="chartSubjects"></div>
+      <div class="card-body">
+        <div class="chart" id="chartSubjects"></div>
+      </div>
     </div>
 
-    <div class="chart-card">
-      <h3>总分走势（含班级平均分对比）</h3>
-      <div class="chart" id="chartTotal"></div>
+    <div class="chart-card" id="cardTotal">
+      <h3>
+        <span class="h3-title">总分走势（含班级平均分对比）</span>
+        <span class="h3-actions">
+          <button type="button" class="zoom-btn" data-chart="chartTotal" data-title="总分走势" title="放大查看">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+            <span class="txt">放大</span>
+          </button>
+          <button type="button" class="collapse-btn" data-target="cardTotal" title="折叠 / 展开">
+            <svg class="triangle" viewBox="0 0 12 12" width="11" height="11"><path d="M2.5 4.2 L6 7.6 L9.5 4.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </span>
+      </h3>
+      <div class="card-body">
+        <div class="chart" id="chartTotal"></div>
+      </div>
     </div>
 
-    <div class="chart-card" id="rankCard">
-      <h3>排名走势<small>数值越小排名越靠前</small></h3>
-      <div class="chart" id="chartRank"></div>
+    <div class="chart-card" id="cardRank">
+      <h3>
+        <span class="h3-title">排名走势</span>
+        <small>数值越小排名越靠前</small>
+        <span class="sf-wrap" id="rfWrap">
+          <button type="button" class="sf-btn" id="rfBtn">班级+级部 <span class="caret">▼</span></button>
+          <div class="sf-panel" id="rfPanel">
+            <div class="sf-actions">
+              <button type="button" data-rf="all">全选</button>
+              <button type="button" data-rf="none">清空</button>
+            </div>
+            <label class="sf-item">
+              <input type="checkbox" value="classRank" checked>
+              <span>班级排名</span>
+            </label>
+            <label class="sf-item">
+              <input type="checkbox" value="gradeRank" checked>
+              <span>级部排名</span>
+            </label>
+          </div>
+        </span>
+        <span class="h3-actions">
+          <button type="button" class="zoom-btn" data-chart="chartRank" data-title="排名走势" title="放大查看">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+            <span class="txt">放大</span>
+          </button>
+          <button type="button" class="collapse-btn" data-target="cardRank" title="折叠 / 展开">
+            <svg class="triangle" viewBox="0 0 12 12" width="11" height="11"><path d="M2.5 4.2 L6 7.6 L9.5 4.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </span>
+      </h3>
+      <div class="card-body">
+        <div class="chart" id="chartRank"></div>
+      </div>
     </div>
 
-    <div class="chart-card">
-      <h3>成绩明细</h3>
-      <div id="detailTable"></div>
+    <div class="chart-card" id="cardDetail">
+      <h3>
+        <span class="h3-title">成绩明细</span>
+        <span class="h3-actions">
+          <button type="button" class="collapse-btn" data-target="cardDetail" title="折叠 / 展开">
+            <svg class="triangle" viewBox="0 0 12 12" width="11" height="11"><path d="M2.5 4.2 L6 7.6 L9.5 4.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </span>
+      </h3>
+      <div class="card-body">
+        <div id="detailTable"></div>
+      </div>
     </div>
   </div>
 
   <footer class="footer">© 李思齐 版权所有</footer>
 
+</div>
+
+<div class="chart-modal" id="chartModal">
+  <div class="chart-modal-content">
+    <div class="chart-modal-head">
+      <div class="mh-title-wrap">
+        <span class="mh-title" id="chartModalTitle">图表放大</span>
+        <span class="mh-hint">双指捏合缩放 · 单指拖动平移 · 滚轮缩放（桌面）</span>
+      </div>
+      <button type="button" id="chartModalClose" title="关闭">✕</button>
+    </div>
+    <div class="chart-modal-body">
+      <div id="chartModalBody"></div>
+      <div class="mobile-zoom-controls" id="mobileZoomControls">
+        <button type="button" data-zoom="in" title="放大">＋</button>
+        <button type="button" data-zoom="out" title="缩小">－</button>
+        <button type="button" data-zoom="reset" title="重置">↺</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -307,12 +643,15 @@ const state = {
   exams: [],
   studentIndex: new Map(),
   selectedId: null,
-  selectedSubjects: null
+  selectedSubjects: null,
+  rankFilter: null
 };
+let currentMode = 'normal';
 let uidSeq = 0;
 const uid = () => 'e' + (++uidSeq) + '_' + Math.random().toString(36).slice(2, 6);
 
-const SUBJECT_ORDER = ['语文','数学','英语','物理','化学','生物','政治','历史','地理','道德与法治','科学','信息技术','体育'];
+const ALLOWED_SUBJECTS = ['语文','数学','英语','物理','化学','生物','地理','政治','历史'];
+const SUBJECT_ORDER   = ALLOWED_SUBJECTS.slice();
 const PALETTE = ['#4f6ef7','#22c55e','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#f97316','#64748b'];
 
 function subjectColor(sub, allSubs) {
@@ -336,26 +675,40 @@ function detect(raw) {
   const h = norm(raw);
   if (!h) return null;
   if (/^\d+(\.\d+)?$/.test(h)) return null;
-
-  if (/班级排名|班级名次|班排名|班名次|行政班排名/.test(h)) return { type: 'classRank' };
-  if (/级部排名|级部名次|年级排名|年级名次|级排名|校排名|校名次/.test(h)) return { type: 'gradeRank' };
+  if (h.length > 30) return null;
 
   if (/准考证|考号|考生号|学籍号|考籍号/.test(h)) return { type: 'id' };
-  if (/姓名/.test(h)) return { type: 'name' };
-  if (/班级|班别|行政班/.test(h)) return { type: 'class' };
-  if (/序号|编号|备注|考场|座位|学期|学校/.test(h)) return { type: 'ignore' };
+  if (/姓名/.test(h) && h.length <= 10) return { type: 'name' };
 
-  const isRank = /排名|名次|位次|次序/.test(h);
-  let base = h.replace(/排名|名次|位次|次序|成绩|分数|得分|分值|原始分|赋分|等级/g, '');
-  if (!base) base = '总';
+  if (/^(班级?|行政班)(排名|名次|位次|次序)$/.test(h)
+   || /^(班排|班名次|班名)$/.test(h)) return { type: 'classRank' };
+  if (/^(级部|年级|校级|学校|校|联考|县|区|市)(排名|名次|位次)$/.test(h)
+   || /^(级排|校排|年排|级名次|校名次|年名次)$/.test(h)) return { type: 'gradeRank' };
 
-  if (/^总/.test(base) || /合计|总计/.test(base)) {
-    return isRank ? { type: 'totalRank' } : { type: 'total' };
+  if (/^(班级|班别|行政班|班级名称)$/.test(h)) return { type: 'class' };
+
+  if (/^(序号|编号|备注|考场|座位|学期|学校名称|学号|性别|出生日期|民族)$/.test(h)) {
+    return { type: 'ignore' };
   }
-  if (!/[\u4e00-\u9fa5]/.test(base)) return { type: 'ignore' };
-  if (base.length >= 1 && base.length <= 10) {
-    return isRank ? { type: 'subRank', subject: base } : { type: 'subScore', subject: base };
+
+  if (/^(总分|总成绩|总计|合计|总分值)$/.test(h)) return { type: 'total' };
+  if (/^(总分排名|总分名次|总排名|总名次|总分位次)$/.test(h)) return { type: 'totalRank' };
+
+  const rankMatch = h.match(/^(.*?)(级部|年级|校级|学校|校|班级?|联考|县|区|市)?(排名|名次|位次|次序)$/);
+  let base = h;
+  let isRank = false;
+  if (rankMatch) {
+    isRank = true;
+    base = rankMatch[1];
   }
+  base = base.replace(/(成绩|分数|得分|分值|原始分|赋分|等级分|等级)$/, '');
+
+  if (ALLOWED_SUBJECTS.includes(base)) {
+    return isRank
+      ? { type: 'subRank',  subject: base }
+      : { type: 'subScore', subject: base };
+  }
+
   return { type: 'ignore' };
 }
 
@@ -376,6 +729,31 @@ function findHeaderRow(aoa) {
     if (score > bestScore) { bestScore = score; best = r; }
   }
   return bestScore >= 4 ? best : -1;
+}
+
+function findSheetTitle(aoa, hIdx) {
+  if (hIdx <= 0) return null;
+  const candidates = [];
+  for (let r = 0; r < hIdx; r++) {
+    const row = aoa[r] || [];
+    for (const v of row) {
+      if (v == null) continue;
+      const s = String(v).trim();
+      if (!s) continue;
+      if (s.length < 3 || s.length > 120) continue;
+      if (/^\d+(\.\d+)?$/.test(s)) continue;
+      if (/^(准考证号?|考号|考生号|姓名|班级|序号|学号|性别|总分)$/.test(s)) continue;
+      candidates.push(s);
+    }
+  }
+  if (!candidates.length) return null;
+
+  const uniq = [...new Set(candidates)];
+  const kw = /考试|期中|期末|月考|测试|成绩|学年|学期|模考|联考|一模|二模|三模|单元|检测|统考|段考|质量|练习/;
+  const withKw = uniq.filter(s => kw.test(s));
+  const pool = withKw.length ? withKw : uniq;
+  pool.sort((a, b) => b.length - a.length);
+  return pool[0];
 }
 
 function buildColMap(aoa, hIdx) {
@@ -454,7 +832,7 @@ function assignRank(arr, getVal, setRank) {
 }
 
 /* ============================================================
- *  解析单个工作表
+ *  普通模式：解析单个工作表
  * ============================================================ */
 function parseSheet(sheet, sheetName, fileName, baseName, multiSheet) {
   let aoa = XLSX.utils.sheet_to_json(sheet, {
@@ -477,6 +855,7 @@ function parseSheet(sheet, sheetName, fileName, baseName, multiSheet) {
   const hIdx = findHeaderRow(aoa);
   if (hIdx < 0) return null;
 
+  const sheetTitle = findSheetTitle(aoa, hIdx);
   const { map, recognized, dataStart } = buildColMap(aoa, hIdx);
 
   const subjCount = Object.keys(map.subjects).length;
@@ -559,12 +938,27 @@ function parseSheet(sheet, sheetName, fileName, baseName, multiSheet) {
   const classAvgTotal = totals.length
     ? +(totals.reduce((a, b) => a + b, 0) / totals.length).toFixed(1) : null;
 
-  const examName = multiSheet ? `${baseName} · ${sheetName}` : baseName;
+  let examName;
+  if (sheetTitle) {
+    examName = sheetTitle;
+    if (multiSheet && !isDefaultSheetName(sheetName) && !isSameName(sheetTitle, sheetName)) {
+      examName = `${sheetTitle} · ${sheetName}`;
+    }
+  } else if (multiSheet) {
+    if (!isDefaultSheetName(sheetName)) {
+      examName = sheetName;
+    } else {
+      examName = baseName;
+    }
+  } else {
+    examName = baseName;
+  }
 
   return {
     uid: uid(),
     fileName,
     sheetName,
+    sheetTitle: sheetTitle || null,
     examName,
     students,
     recognized,
@@ -574,7 +968,7 @@ function parseSheet(sheet, sheetName, fileName, baseName, multiSheet) {
 }
 
 /* ============================================================
- *  解析一个 Excel 文件（可能含多张工作表）
+ *  普通模式：解析一个 Excel 文件
  * ============================================================ */
 function buildExams(buf, fileName) {
   let wb;
@@ -609,7 +1003,157 @@ function buildExams(buf, fileName) {
     }
   }
 
+  const usedNames = new Map();
+  results.forEach(exam => {
+    const orig = exam.examName;
+    if (usedNames.has(orig)) {
+      const n = usedNames.get(orig) + 1;
+      usedNames.set(orig, n);
+      exam.examName = `${orig}（${n}）`;
+    } else {
+      usedNames.set(orig, 1);
+    }
+  });
+
   return results;
+}
+
+/* ============================================================
+ *  教务处模式：解析一个 Excel 文件（只取“全年级”工作表）
+ * ============================================================ */
+function buildExamsJiaowu(buf, fileName) {
+  let wb;
+  try { wb = XLSX.read(buf, { type: 'array' }); }
+  catch (e) { console.error('读取失败', e); return []; }
+
+  let targetSheetName = null;
+  for (const sn of wb.SheetNames) {
+    if (sn.includes('全年级')) { targetSheetName = sn; break; }
+  }
+  if (!targetSheetName) return [];
+
+  const sh = wb.Sheets[targetSheetName];
+  if (!sh) return [];
+
+  let aoa = XLSX.utils.sheet_to_json(sh, {
+    header: 1, raw: true, defval: null, blankrows: false
+  });
+  if (!aoa || !aoa.length) return [];
+
+  const merges = sh['!merges'] || [];
+  for (const m of merges) {
+    const v = (aoa[m.s.r] || [])[m.s.c];
+    if (v == null) continue;
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      if (!aoa[r]) aoa[r] = [];
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (aoa[r][c] == null) aoa[r][c] = v;
+      }
+    }
+  }
+
+  const hIdx = findHeaderRow(aoa);
+  if (hIdx < 0) return [];
+
+  const { map, recognized, dataStart } = buildColMap(aoa, hIdx);
+
+  const subjCount = Object.keys(map.subjects).length;
+  if (!(map.name != null || map.id != null) || subjCount === 0) return [];
+
+  const students = new Map();
+
+  for (let r = dataStart; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    if (!row.some(c => c != null && String(c).trim() !== '')) continue;
+
+    let id   = map.id   != null ? cleanId(row[map.id]) : '';
+    let name = map.name != null ? String(row[map.name] ?? '').trim() : '';
+
+    if (!id && !name) continue;
+    if (/平均|合计|总计|统计|总分表|小计/.test(name)) continue;
+    if (!id) id = 'N:' + name;
+    if (!name) name = id;
+
+    const rec = {
+      id, name, class: '',
+      subjects: {},
+      total: null, totalRank: null,
+      classRank: null, gradeRank: null
+    };
+    if (map.class != null) rec.class = String(row[map.class] ?? '').trim();
+
+    for (const [sub, cc] of Object.entries(map.subjects)) {
+      const sc = cc.score != null ? num(row[cc.score]) : null;
+      if (sc != null) rec.subjects[sub] = { score: sc, rank: null };
+    }
+    if (map.total != null)     rec.total     = num(row[map.total]);
+    if (map.totalRank != null) rec.totalRank = num(row[map.totalRank]);
+    if (map.classRank != null) rec.classRank = num(row[map.classRank]);
+    if (map.gradeRank != null) rec.gradeRank = num(row[map.gradeRank]);
+
+    if (rec.total == null) {
+      const vals = Object.values(rec.subjects).map(s => s.score).filter(v => v != null);
+      if (vals.length) rec.total = vals.reduce((a, b) => a + b, 0);
+    }
+
+    students.set(id, rec);
+  }
+
+  if (students.size === 0) return [];
+
+  const all = [...students.values()];
+
+  const subjSet = new Set();
+  all.forEach(s => Object.keys(s.subjects).forEach(k => subjSet.add(k)));
+  subjSet.forEach(sub => {
+    const arr = all.filter(s => s.subjects[sub] && typeof s.subjects[sub].score === 'number');
+    assignRank(arr, s => s.subjects[sub].score, (s, r) => {
+      if (s.subjects[sub]) s.subjects[sub].rank = r;
+    });
+  });
+
+  all.forEach(s => {
+    if (s.totalRank == null && s.gradeRank != null) s.totalRank = s.gradeRank;
+  });
+
+  const totals = all.map(s => s.total).filter(v => typeof v === 'number');
+  const classAvgTotal = totals.length
+    ? +(totals.reduce((a, b) => a + b, 0) / totals.length).toFixed(1) : null;
+
+  return [{
+    uid: uid(),
+    fileName,
+    examName: fileName.replace(/\.[^.]+$/, ''),
+    students,
+    recognized,
+    classAvgTotal,
+    studentCount: students.size
+  }];
+}
+
+/* ============================================================
+ *  工具：工作表名判断
+ * ============================================================ */
+function isDefaultSheetName(name) {
+  if (!name) return true;
+  const s = String(name).trim();
+  if (!s) return true;
+  return /^(sheet|工作表|表格|sheet\d+|工作表\d+)$/i.test(s)
+      || /^(sheet|工作表|表格)\s*\d+$/i.test(s);
+}
+
+function isSameName(a, b) {
+  if (!a || !b) return false;
+  const na = String(a).replace(/[\s\u3000]/g, '').toLowerCase();
+  const nb = String(b).replace(/[\s\u3000]/g, '').toLowerCase();
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) {
+    const shortLen = Math.min(na.length, nb.length);
+    const longLen  = Math.max(na.length, nb.length);
+    return longLen - shortLen <= 6;
+  }
+  return false;
 }
 
 /* ============================================================
@@ -625,7 +1169,12 @@ async function handleFiles(fileList) {
   for (const f of files) {
     try {
       const buf = await f.arrayBuffer();
-      const exams = buildExams(buf, f.name);
+      let exams = [];
+      if (currentMode === 'jiaowu') {
+        exams = buildExamsJiaowu(buf, f.name);
+      } else {
+        exams = buildExams(buf, f.name);
+      }
       if (exams.length) {
         state.exams.push(...exams);
         okCount += exams.length;
@@ -680,10 +1229,13 @@ function rebuild() {
   }
 
   renderExamList();
+  updateClassSelect();
   renderStudentList();
 
   if (!state.selectedId && state.studentIndex.size) {
-    state.selectedId = state.studentIndex.keys().next().value;
+    if (currentMode !== 'jiaowu') {
+      state.selectedId = state.studentIndex.keys().next().value;
+    }
   }
   if (state.selectedId && state.studentIndex.has(state.selectedId)) {
     document.getElementById('studentSearch').value =
@@ -698,6 +1250,27 @@ function rebuild() {
   document.getElementById('examCard').style.display = hasData ? '' : 'none';
   document.getElementById('studentCard').style.display = hasData ? '' : 'none';
   document.getElementById('toolbar').style.display = hasData ? '' : 'none';
+
+  const classWrap = document.getElementById('classSelectWrap');
+  if (classWrap) {
+    classWrap.style.display = (currentMode === 'jiaowu' && state.studentIndex.size > 0) ? '' : 'none';
+  }
+}
+
+/* ============================================================
+ *  更新班级下拉框
+ * ============================================================ */
+function updateClassSelect() {
+  const select = document.getElementById('classSelect');
+  if (!select) return;
+  const currentVal = select.value;
+  const classes = new Set();
+  for (const s of state.studentIndex.values()) {
+    if (s.class) classes.add(s.class);
+  }
+  select.innerHTML = '<option value="">全部班级</option>' +
+    [...classes].sort().map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  if (classes.has(currentVal)) select.value = currentVal;
 }
 
 /* ============================================================
@@ -713,7 +1286,8 @@ function renderExamList() {
       <div class="exam-body">
         <input class="exam-name-input" data-uid="${e.uid}" value="${esc(e.examName)}">
         <div class="exam-meta">
-          ${e.sheetName ? `<span class="tag">工作表：${esc(e.sheetName)}</span>` : ''}
+          ${e.sheetTitle ? `<span class="tag title">标题：${esc(e.sheetTitle)}</span>` : ''}
+          ${(e.sheetName && !isDefaultSheetName(e.sheetName)) ? `<span class="tag">工作表：${esc(e.sheetName)}</span>` : ''}
           <b>${e.studentCount}</b> 名学生 &nbsp;·&nbsp; 平均总分 <b>${e.classAvgTotal ?? '—'}</b>
           &nbsp;·&nbsp; 识别列：${esc(e.recognized.join('、'))}
         </div>
@@ -754,7 +1328,7 @@ function renderExamList() {
 }
 
 /* ============================================================
- *  渲染：学生下拉
+ *  渲染：学生下拉（支持班级筛选）
  * ============================================================ */
 function renderStudentList(filter = '') {
   const list = document.getElementById('studentList');
@@ -762,8 +1336,12 @@ function renderStudentList(filter = '') {
     list.innerHTML = '<div class="empty-tip">暂无学生数据</div>';
     return;
   }
-  const q = filter.trim().toLowerCase();
+  const selectedClass = document.getElementById('classSelect')?.value || '';
   let items = [...state.studentIndex.values()];
+  if (selectedClass) {
+    items = items.filter(s => s.class === selectedClass);
+  }
+  const q = filter.trim().toLowerCase();
   if (q) {
     items = items.filter(s =>
       s.name.toLowerCase().includes(q) || String(s.id).toLowerCase().includes(q));
@@ -784,18 +1362,21 @@ function renderStudentList(filter = '') {
 /* ============================================================
  *  图表工具
  * ============================================================ */
+const chartOptions = new Map();
+
 function drawChart(id, option) {
   const el = document.getElementById(id);
   if (!el) return null;
   let inst = echarts.getInstanceByDom(el);
   if (!inst) inst = echarts.init(el);
   inst.setOption(option, true);
+  chartOptions.set(id, option);
   setTimeout(() => inst.resize(), 30);
   return inst;
 }
 
 /* ============================================================
- *  各科排名走势图：单点悬浮提示
+ *  各科排名走势图
  * ============================================================ */
 function drawSubjectChart(activeSubs, allSubs, recs, labels) {
   if (!activeSubs.length) {
@@ -812,7 +1393,6 @@ function drawSubjectChart(activeSubs, allSubs, recs, labels) {
   }
 
   drawChart('chartSubjects', {
-    /* ---------- 关键改动：trigger 由 'axis' 改为 'item'，只显示当前悬停的那一个点 ---------- */
     tooltip: {
       trigger: 'item',
       confine: true,
@@ -823,9 +1403,7 @@ function drawSubjectChart(activeSubs, allSubs, recs, labels) {
       textStyle: { color: '#1f2937', fontSize: 12.5 },
       extraCssText: 'box-shadow:0 8px 26px rgba(31,41,55,.14);border-radius:10px;',
       formatter: function(p) {
-        // p 是单个数据点，不再是数组
         if (!p || !p.data) return '';
-
         const examName = p.data.examName || p.name || '';
         const subject  = p.seriesName || '';
         const rank     = p.data.value;
@@ -847,7 +1425,6 @@ function drawSubjectChart(activeSubs, allSubs, recs, labels) {
               + '<span style="color:#9aa3b2;margin-left:2px;">排名</span>'
               + '<b style="color:' + p.color + ';">第 ' + rank + ' 名</b>'
               + '</div>';
-
         return html;
       }
     },
@@ -973,6 +1550,48 @@ function applySubjectSelection() {
 }
 
 /* ============================================================
+ *  排名筛选
+ * ============================================================ */
+function rfBtnText(showClass, showGrade) {
+  if (showClass && showGrade) return '班级+级部';
+  if (showClass) return '仅班级排名';
+  if (showGrade) return '仅级部排名';
+  return '未选择';
+}
+
+function renderRankFilter() {
+  const panel = document.getElementById('rfPanel');
+  const btn = document.getElementById('rfBtn');
+  if (!panel || !btn) return;
+
+  const showClass = (state.rankFilter === null) || state.rankFilter.classRank;
+  const showGrade = (state.rankFilter === null) || state.rankFilter.gradeRank;
+
+  panel.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    if (cb.value === 'classRank') cb.checked = showClass;
+    if (cb.value === 'gradeRank') cb.checked = showGrade;
+  });
+
+  btn.innerHTML = esc(rfBtnText(showClass, showGrade)) + ' <span class="caret">▼</span>';
+}
+
+function applyRankSelection() {
+  const panel = document.getElementById('rfPanel');
+  const boxes = [...panel.querySelectorAll('input[type=checkbox]')];
+  const showClass = boxes.find(b => b.value === 'classRank')?.checked ?? true;
+  const showGrade = boxes.find(b => b.value === 'gradeRank')?.checked ?? true;
+
+  if (showClass && showGrade) {
+    state.rankFilter = null;
+  } else {
+    state.rankFilter = { classRank: showClass, gradeRank: showGrade };
+  }
+
+  renderRankFilter();
+  renderReport();
+}
+
+/* ============================================================
  *  渲染：报表
  * ============================================================ */
 function renderReport() {
@@ -1076,54 +1695,77 @@ function renderReport() {
     ]
   });
 
+  renderRankFilter();
+
   const hasClassRank = recs.some(r => r.classRank != null);
   const hasGradeRank = recs.some(r => r.gradeRank != null);
-  const rankCard = document.getElementById('rankCard');
-  rankCard.style.display = (hasClassRank || hasGradeRank) ? '' : 'none';
+  const rankCard = document.getElementById('cardRank');
+  const anyRank = hasClassRank || hasGradeRank;
+  rankCard.style.display = anyRank ? '' : 'none';
 
-  if (hasClassRank || hasGradeRank) {
-    const rankSeries = [];
+  if (anyRank) {
+    const showClass = (state.rankFilter === null) ? true : !!state.rankFilter.classRank;
+    const showGrade = (state.rankFilter === null) ? true : !!state.rankFilter.gradeRank;
+    const noSelection = !showClass && !showGrade;
 
-    if (hasClassRank) {
-      rankSeries.push({
-        name: '班级排名',
-        type: 'line', smooth: true, connectNulls: true,
-        symbol: 'circle', symbolSize: 8,
-        lineStyle: { width: 3, color: '#4f6ef7' },
-        itemStyle: { color: '#4f6ef7' },
-        label: { show: true, position: 'bottom', fontSize: 11, color: '#4f6ef7', fontWeight: 600 },
-        data: recs.map(r => r.classRank ?? null)
+    if (noSelection) {
+      drawChart('chartRank', {
+        graphic: [{
+          type: 'text', left: 'center', top: 'middle',
+          style: { text: '请在上方下拉菜单中至少选择一项', fill: '#9aa3b2', fontSize: 14 }
+        }],
+        xAxis: { show: false },
+        yAxis: { show: false },
+        series: []
+      });
+    } else {
+      const rankSeries = [];
+
+      if (showClass) {
+        rankSeries.push({
+          name: '班级排名',
+          type: 'line', smooth: true, connectNulls: true,
+          symbol: 'circle', symbolSize: 8,
+          lineStyle: { width: 3, color: '#4f6ef7' },
+          itemStyle: { color: '#4f6ef7' },
+          label: { show: true, position: 'bottom', fontSize: 11, color: '#4f6ef7', fontWeight: 600 },
+          data: recs.map(r => r.classRank ?? null)
+        });
+      }
+      if (showGrade) {
+        rankSeries.push({
+          name: '级部排名',
+          type: 'line', smooth: true, connectNulls: true,
+          symbol: 'circle', symbolSize: 8,
+          lineStyle: { width: 3, color: '#f59e0b' },
+          itemStyle: { color: '#f59e0b' },
+          label: { show: true, position: 'top', fontSize: 11, color: '#d97706', fontWeight: 600 },
+          data: recs.map(r => r.gradeRank ?? null)
+        });
+      }
+
+      drawChart('chartRank', {
+        tooltip: { trigger: 'axis' },
+        legend: {
+          bottom: 0, itemWidth: 14, itemHeight: 8,
+          textStyle: { fontSize: 12, color: '#4b5563' },
+          data: rankSeries.map(x => x.name)
+        },
+        grid: { left: 52, right: 26, top: 26, bottom: 56 },
+        xAxis: {
+          type: 'category', data: labels, boundaryGap: false,
+          axisLine: { lineStyle: { color: '#dfe4ee' } },
+          axisLabel: axisLabelCfg, axisTick: { show: false }
+        },
+        yAxis: {
+          type: 'value', name: '名次', inverse: true, min: 1, minInterval: 1,
+          nameTextStyle: { color: '#9aa3b2', fontSize: 11 },
+          axisLabel: { color: '#6b7280', fontSize: 11.5, formatter: '{value}' },
+          splitLine: { lineStyle: { color: '#f0f3f9' } }
+        },
+        series: rankSeries
       });
     }
-    if (hasGradeRank) {
-      rankSeries.push({
-        name: '级部排名',
-        type: 'line', smooth: true, connectNulls: true,
-        symbol: 'circle', symbolSize: 8,
-        lineStyle: { width: 3, color: '#f59e0b' },
-        itemStyle: { color: '#f59e0b' },
-        label: { show: true, position: 'top', fontSize: 11, color: '#d97706', fontWeight: 600 },
-        data: recs.map(r => r.gradeRank ?? null)
-      });
-    }
-
-    drawChart('chartRank', {
-      tooltip: { trigger: 'axis' },
-      legend: { bottom: 0, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 12, color: '#4b5563' } },
-      grid: { left: 52, right: 26, top: 26, bottom: 56 },
-      xAxis: {
-        type: 'category', data: labels, boundaryGap: false,
-        axisLine: { lineStyle: { color: '#dfe4ee' } },
-        axisLabel: axisLabelCfg, axisTick: { show: false }
-      },
-      yAxis: {
-        type: 'value', name: '名次', inverse: true, min: 1, minInterval: 1,
-        nameTextStyle: { color: '#9aa3b2', fontSize: 11 },
-        axisLabel: { color: '#6b7280', fontSize: 11.5, formatter: '{value}' },
-        splitLine: { lineStyle: { color: '#f0f3f9' } }
-      },
-      series: rankSeries
-    });
   }
 
   let html = '<table class="detail"><thead><tr><th>考试</th>';
@@ -1149,10 +1791,372 @@ function renderReport() {
   }
   html += '</tbody></table>';
   document.getElementById('detailTable').innerHTML = html;
+
+  setTimeout(() => { activateVisibleCards(); resizeAllCharts(); }, 40);
 }
 
 /* ============================================================
- *  导出：稳定版
+ *  卡片滚动渐入：磨砂 → 清晰
+ * ============================================================ */
+const cardObserver = ('IntersectionObserver' in window)
+  ? new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const el = entry.target;
+          el.classList.add('visible');
+          // 过渡结束后移除 will-change，释放 GPU 资源
+          const onEnd = () => {
+            el.classList.add('done');
+            el.removeEventListener('transitionend', onEnd);
+          };
+          el.addEventListener('transitionend', onEnd);
+          // 兜底：1.2 秒后强制完成
+          setTimeout(() => el.classList.add('done'), 1200);
+          cardObserver.unobserve(el);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' })
+  : null;
+
+function observeAllCards() {
+  if (!cardObserver) {
+    document.querySelectorAll('.chart-card').forEach(c => c.classList.add('visible', 'done'));
+    return;
+  }
+  document.querySelectorAll('.chart-card').forEach(el => {
+    if (!el.classList.contains('visible')) cardObserver.observe(el);
+  });
+}
+
+function activateVisibleCards() {
+  const cards = document.querySelectorAll('.chart-card:not(.visible)');
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  cards.forEach(c => {
+    const rect = c.getBoundingClientRect();
+    if (rect.top < vh - 20 && rect.bottom > 0) {
+      c.classList.add('visible');
+      if (cardObserver) cardObserver.unobserve(c);
+      setTimeout(() => c.classList.add('done'), 1200);
+    }
+  });
+}
+
+function resizeAllCharts() {
+  document.querySelectorAll('.chart').forEach(d => {
+    if (d.closest('.chart-card')?.classList.contains('collapsed')) return;
+    const inst = echarts.getInstanceByDom(d);
+    if (inst) inst.resize();
+  });
+}
+
+/* ============================================================
+ *  卡片折叠
+ * ============================================================ */
+function toggleCollapse(cardEl) {
+  if (!cardEl) return;
+  const willExpand = cardEl.classList.contains('collapsed');
+  cardEl.classList.toggle('collapsed');
+
+  if (willExpand) {
+    setTimeout(() => {
+      cardEl.querySelectorAll('.chart').forEach(d => {
+        const inst = echarts.getInstanceByDom(d);
+        if (inst) inst.resize();
+      });
+    }, 60);
+    cardEl.classList.add('visible', 'done');
+  }
+}
+
+/* ============================================================
+ *  示例数据
+ * ============================================================ */
+function loadDemo() {
+  const subjects = ALLOWED_SUBJECTS.slice();
+  const full = [150, 150, 150, 100, 100, 100, 100, 100, 100];
+  const names = ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九', '吴十'];
+  const classNames = ['高一(1)班', '高一(2)班'];
+
+  const base = names.map((n, i) => ({
+    id: String(20230101 + i),
+    name: n,
+    class: classNames[i % 2],
+    s: subjects.map((_, j) => full[j] * (0.5 + 0.38 * Math.random())),
+    g: subjects.map(() => (Math.random() - 0.32))
+  }));
+
+  const exams = [
+    { title: '第一次月考', k: 0 },
+    { title: '期中考试',   k: 1 },
+    { title: '第二次月考', k: 2 },
+    { title: '期末考试',   k: 3 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+
+  exams.forEach(def => {
+    const rows = base.map(st => {
+      const sc = subjects.map((_, j) => {
+        let v = st.s[j] + st.g[j] * def.k * 7 + (Math.random() - 0.5) * 9;
+        return Math.max(0, Math.min(full[j], Math.round(v)));
+      });
+      return {
+        st,
+        sc,
+        subRanks: new Array(subjects.length).fill(0),
+        total: sc.reduce((a, b) => a + b, 0),
+        totalRank: 0,
+        classRank: 0
+      };
+    });
+
+    subjects.forEach((_, j) => {
+      const srt = [...rows].sort((a, b) => b.sc[j] - a.sc[j]);
+      let lastVal = null, lastRank = 0;
+      srt.forEach((r, i) => {
+        if (lastVal !== null && r.sc[j] === lastVal) {
+          r.subRanks[j] = lastRank;
+        } else {
+          lastRank = i + 1;
+          lastVal = r.sc[j];
+          r.subRanks[j] = lastRank;
+        }
+      });
+    });
+
+    const byTotal = [...rows].sort((a, b) => b.total - a.total);
+    let lastT = null, lastTR = 0;
+    byTotal.forEach((r, i) => {
+      if (lastT !== null && r.total === lastT) {
+        r.totalRank = lastTR;
+      } else {
+        lastTR = i + 1;
+        lastT = r.total;
+        r.totalRank = lastTR;
+      }
+    });
+
+    const byClass = new Map();
+    rows.forEach(r => {
+      const k = r.st.class;
+      if (!byClass.has(k)) byClass.set(k, []);
+      byClass.get(k).push(r);
+    });
+    byClass.forEach(arr => {
+      arr.sort((a, b) => b.total - a.total);
+      let lv = null, lr = 0;
+      arr.forEach((r, i) => {
+        if (lv !== null && r.total === lv) {
+          r.classRank = lr;
+        } else {
+          lr = i + 1;
+          lv = r.total;
+          r.classRank = lr;
+        }
+      });
+    });
+
+    const aoa = [];
+    aoa.push([`${def.title} 高一年级成绩表`]);
+    aoa.push([]);
+    const headerRow = ['准考证号', '姓名', '班级'];
+    subjects.forEach(s => headerRow.push(s + '成绩'));
+    subjects.forEach(s => headerRow.push(s + '级部排名'));
+    headerRow.push('总分', '班级排名', '级部排名');
+    aoa.push(headerRow);
+
+    rows.forEach(r => {
+      const row = [r.st.id, r.st.name, r.st.class];
+      r.sc.forEach(v => row.push(v));
+      r.subRanks.forEach(v => row.push(v));
+      row.push(r.total, r.classRank, r.totalRank);
+      aoa.push(row);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet' + (exams.indexOf(def) + 1));
+  });
+
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  const examsData = buildExams(buf, '示例成绩表.xlsx');
+
+  if (examsData.length) {
+    state.exams.push(...examsData);
+    rebuild();
+    toast(`已载入 ${examsData.length} 次考试的示例数据`);
+  } else {
+    toast('示例数据生成失败，请反馈');
+  }
+}
+
+/* ============================================================
+ *  图表放大模态框（回退到稳定版本）
+ * ============================================================ */
+let modalChartInst = null;
+let zoomState = { start: 0, end: 100 };
+
+function buildModalOption(baseOpt) {
+  const isMobile = window.innerWidth <= 640;
+  const opt = Object.assign({}, baseOpt);
+
+  // grid 调整
+  const baseGrid = baseOpt.grid || {};
+  opt.grid = Object.assign({}, baseGrid, {
+    left: isMobile ? 48 : (baseGrid.left || 58),
+    right: isMobile ? 22 : (baseGrid.right || 30),
+    top: isMobile ? 24 : (baseGrid.top || 30),
+    bottom: isMobile ? 96 : 100
+  });
+
+  // 图例位置
+  if (baseOpt.legend) {
+    opt.legend = Object.assign({}, baseOpt.legend, {
+      bottom: isMobile ? 8 : 10,
+      textStyle: { fontSize: isMobile ? 11 : 12, color: '#4b5563' }
+    });
+  }
+
+  // dataZoom
+  if (baseOpt.series && baseOpt.series.length) {
+    opt.dataZoom = [
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        filterMode: 'none',
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: false,
+        zoomOnTouch: true,
+        moveOnTouch: true
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        height: isMobile ? 26 : 22,
+        bottom: isMobile ? 42 : 52,
+        left: isMobile ? 48 : 66,
+        right: isMobile ? 22 : 36,
+        borderColor: '#e6eaf2',
+        fillerColor: 'rgba(79,110,247,.12)',
+        handleStyle: {
+          color: '#fff',
+          borderColor: '#4f6ef7',
+          borderWidth: 1.5,
+          width: isMobile ? 22 : 12
+        },
+        moveHandleStyle: { color: '#4f6ef7', opacity: .5 },
+        dataBackground: {
+          lineStyle: { color: '#cbd5e1' },
+          areaStyle: { color: 'rgba(203,213,225,.3)' }
+        },
+        selectedDataBackground: {
+          lineStyle: { color: '#4f6ef7' },
+          areaStyle: { color: 'rgba(79,110,247,.15)' }
+        },
+        textStyle: { fontSize: 10, color: '#9aa3b2' },
+        brushSelect: false
+      }
+    ];
+  }
+
+  return opt;
+}
+
+function openChartModal(chartId, title) {
+  const baseOpt = chartOptions.get(chartId);
+  if (!baseOpt) { toast('图表尚未准备好'); return; }
+
+  document.getElementById('chartModalTitle').textContent = title || '图表放大';
+
+  const modal = document.getElementById('chartModal');
+  modal.classList.add('show');
+  document.body.classList.add('modal-open');
+
+  // 清除旧实例
+  if (modalChartInst) {
+    try { modalChartInst.dispose(); } catch (e) {}
+    modalChartInst = null;
+  }
+
+  // 双 rAF 确保模态框布局稳定后，再初始化 ECharts
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const body = document.getElementById('chartModalBody');
+      if (!body) return;
+
+      try {
+        modalChartInst = echarts.init(body);
+        const opt = buildModalOption(baseOpt);
+        modalChartInst.setOption(opt, true);
+
+        // 同步缩放状态
+        zoomState = { start: 0, end: 100 };
+        modalChartInst.on('dataZoom', function() {
+          try {
+            const current = modalChartInst.getOption();
+            if (current.dataZoom && current.dataZoom[0]) {
+              zoomState.start = current.dataZoom[0].start;
+              zoomState.end = current.dataZoom[0].end;
+            }
+          } catch (e) {}
+        });
+
+        setTimeout(() => { if (modalChartInst) modalChartInst.resize(); }, 60);
+      } catch (err) {
+        console.error('放大图表初始化失败', err);
+      }
+    });
+  });
+}
+
+function closeChartModal() {
+  const modal = document.getElementById('chartModal');
+  if (!modal.classList.contains('show')) return;
+  modal.classList.remove('show');
+  document.body.classList.remove('modal-open');
+
+  setTimeout(() => {
+    if (modalChartInst) { try { modalChartInst.dispose(); } catch (e) {} modalChartInst = null; }
+  }, 200);
+}
+
+function zoomChart(delta) {
+  if (!modalChartInst) return;
+  const opt = modalChartInst.getOption();
+  if (!opt.dataZoom || !opt.dataZoom.length) return;
+
+  const total = 100;
+  const currentRange = zoomState.end - zoomState.start;
+  const center = (zoomState.start + zoomState.end) / 2;
+
+  let newRange;
+  if (delta > 0) newRange = currentRange * 0.75;
+  else           newRange = currentRange * 1.33;
+  newRange = Math.max(5, Math.min(total, newRange));
+
+  let start = center - newRange / 2;
+  let end = center + newRange / 2;
+
+  if (start < 0) { end += -start; start = 0; }
+  if (end > total) { start -= (end - total); end = total; }
+  start = Math.max(0, start);
+  end = Math.min(total, end);
+
+  zoomState.start = start;
+  zoomState.end = end;
+
+  modalChartInst.dispatchAction({ type: 'dataZoom', start: start, end: end });
+}
+
+function resetZoomChart() {
+  if (!modalChartInst) return;
+  zoomState = { start: 0, end: 100 };
+  modalChartInst.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+}
+
+/* ============================================================
+ *  导出
  * ============================================================ */
 function isMobileUA() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent)
@@ -1232,10 +2236,36 @@ async function exportReport() {
   setExportMask(true, '正在准备图表…');
 
   document.getElementById('sfWrap').classList.remove('open');
+  document.getElementById('rfWrap').classList.remove('open');
+  closeChartModal();
+
+  // 强制展开所有卡片、停用动效、清除磨砂状态
+  const cardRestore = [];
+  document.querySelectorAll('.chart-card').forEach(c => {
+    const wasCollapsed = c.classList.contains('collapsed');
+    const wasVisible = c.classList.contains('visible');
+    c.classList.add('visible', 'done', 'no-anim');
+    if (wasCollapsed) c.classList.remove('collapsed');
+    cardRestore.push(() => {
+      c.classList.remove('no-anim', 'done');
+      if (!wasVisible) c.classList.remove('visible');
+      if (wasCollapsed) c.classList.add('collapsed');
+    });
+  });
+
+  const actionBtns = Array.from(document.querySelectorAll('.zoom-btn, .collapse-btn'));
+  actionBtns.forEach(b => { b.style.visibility = 'hidden'; });
 
   const restoreFns = [];
 
   try {
+    await new Promise(r => setTimeout(r, 80));
+    document.querySelectorAll('.chart').forEach(d => {
+      const inst = echarts.getInstanceByDom(d);
+      if (inst) inst.resize();
+    });
+    await new Promise(r => setTimeout(r, 120));
+
     const chartEls = Array.from(el.querySelectorAll('.chart'));
 
     chartEls.forEach(chartEl => {
@@ -1340,7 +2370,9 @@ async function exportReport() {
     console.error('导出失败', err);
     toast('导出失败：' + ((err && err.message) ? err.message : '请重试'));
   } finally {
+    actionBtns.forEach(b => { b.style.visibility = ''; });
     restoreFns.forEach(fn => { try { fn(); } catch (e) {} });
+    cardRestore.forEach(fn => { try { fn(); } catch (e) {} });
     setExportMask(false);
     btn.disabled = false;
     btn.textContent = oldText;
@@ -1391,18 +2423,69 @@ function toast(msg) {
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => e.preventDefault());
 
+  /* ---------- 模式切换 ---------- */
+  document.querySelectorAll('input[name="uploadMode"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      currentMode = e.target.value;
+      const modeHint = document.getElementById('modeHint');
+      const dzSub = document.getElementById('dzSub');
+      if (currentMode === 'jiaowu') {
+        modeHint.textContent = '教务处模式：每个文件代表一次考试，自动读取“全年级”子表';
+        dzSub.innerHTML = '支持 .xlsx / .xls / .csv &nbsp;·&nbsp; 可一次选择多个文件<br>每个文件代表一次考试，系统从“全年级”子表中读取所有考生数据，自动计算各科级部排名';
+      } else {
+        modeHint.textContent = '普通模式：每张工作表识别为一次考试';
+        dzSub.innerHTML = '支持 .xlsx / .xls / .csv &nbsp;·&nbsp; 可一次选择多个文件<br>一个文件内多张工作表会分别识别为独立考试，并自动读取表头上方的标题行<br>识别科目：语文、数学、英语、物理、化学、生物、地理、政治、历史';
+      }
+      state.exams = [];
+      state.studentIndex = new Map();
+      state.selectedId = null;
+      state.selectedSubjects = null;
+      state.rankFilter = null;
+      document.getElementById('studentSearch').value = '';
+      document.getElementById('report').classList.add('hidden');
+      document.getElementById('sfWrap').classList.remove('open');
+      document.getElementById('rfWrap').classList.remove('open');
+      rebuild();
+      toast('已切换模式，请重新上传文件');
+    });
+  });
+
+  /* ---------- 示例数据 ---------- */
+  document.getElementById('btnDemo').addEventListener('click', loadDemo);
+
+  /* ---------- 清空 ---------- */
   document.getElementById('btnClear').addEventListener('click', () => {
     state.exams = [];
     state.studentIndex = new Map();
     state.selectedId = null;
     state.selectedSubjects = null;
+    state.rankFilter = null;
     document.getElementById('studentSearch').value = '';
     document.getElementById('report').classList.add('hidden');
     document.getElementById('sfWrap').classList.remove('open');
+    document.getElementById('rfWrap').classList.remove('open');
     rebuild();
     toast('已清空');
   });
 
+  /* ---------- 班级选择 ---------- */
+  const classSelect = document.getElementById('classSelect');
+  if (classSelect) {
+    classSelect.addEventListener('change', () => {
+      if (state.selectedId) {
+        const s = state.studentIndex.get(state.selectedId);
+        const selectedClass = classSelect.value;
+        if (selectedClass && s && s.class !== selectedClass) {
+          state.selectedId = null;
+          document.getElementById('studentSearch').value = '';
+          document.getElementById('report').classList.add('hidden');
+        }
+      }
+      renderStudentList(document.getElementById('studentSearch').value);
+    });
+  }
+
+  /* ---------- 学生搜索 ---------- */
   const search = document.getElementById('studentSearch');
   const listEl = document.getElementById('studentList');
 
@@ -1429,6 +2512,7 @@ function toast(msg) {
     if (!e.target.closest('.combo')) listEl.classList.remove('open');
   });
 
+  /* ---------- 科目筛选 ---------- */
   const sfWrap  = document.getElementById('sfWrap');
   const sfBtn   = document.getElementById('sfBtn');
   const sfPanel = document.getElementById('sfPanel');
@@ -1436,6 +2520,7 @@ function toast(msg) {
   sfBtn.addEventListener('click', e => {
     e.stopPropagation();
     sfWrap.classList.toggle('open');
+    document.getElementById('rfWrap').classList.remove('open');
   });
 
   sfPanel.addEventListener('click', e => {
@@ -1452,22 +2537,117 @@ function toast(msg) {
     if (e.target.type === 'checkbox') applySubjectSelection();
   });
 
+  /* ---------- 排名筛选 ---------- */
+  const rfWrap  = document.getElementById('rfWrap');
+  const rfBtn   = document.getElementById('rfBtn');
+  const rfPanel = document.getElementById('rfPanel');
+
+  rfBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    rfWrap.classList.toggle('open');
+    document.getElementById('sfWrap').classList.remove('open');
+  });
+
+  rfPanel.addEventListener('click', e => {
+    const act = e.target.closest('[data-rf]');
+    if (!act) return;
+    e.stopPropagation();
+    const boxes = [...rfPanel.querySelectorAll('input[type=checkbox]')];
+    if (act.dataset.rf === 'all') boxes.forEach(b => b.checked = true);
+    else boxes.forEach(b => b.checked = false);
+    applyRankSelection();
+  });
+
+  rfPanel.addEventListener('change', e => {
+    if (e.target.type === 'checkbox') applyRankSelection();
+  });
+
   document.addEventListener('click', e => {
     if (!e.target.closest('#sfWrap')) sfWrap.classList.remove('open');
+    if (!e.target.closest('#rfWrap')) rfWrap.classList.remove('open');
+  });
+
+  /* ---------- 折叠按钮 ---------- */
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.collapse-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const cardId = btn.dataset.target;
+    const cardEl = document.getElementById(cardId);
+    if (cardEl) toggleCollapse(cardEl);
+  });
+
+  /* ---------- 图表放大 ---------- */
+  let lastZoomTouch = 0;
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.zoom-btn');
+    if (!btn) return;
+    const now = Date.now();
+    if (now - lastZoomTouch < 700) return;
+    e.preventDefault();
+    openChartModal(btn.dataset.chart, btn.dataset.title);
+  });
+
+  document.addEventListener('touchend', function(e) {
+    const btn = e.target.closest && e.target.closest('.zoom-btn');
+    if (!btn) return;
+    lastZoomTouch = Date.now();
+    e.preventDefault();
+    openChartModal(btn.dataset.chart, btn.dataset.title);
+  }, { passive: false });
+
+  document.getElementById('chartModalClose').addEventListener('click', closeChartModal);
+  document.getElementById('chartModal').addEventListener('click', e => {
+    if (e.target.id === 'chartModal') closeChartModal();
+  });
+
+  const mzc = document.getElementById('mobileZoomControls');
+  mzc.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-zoom]');
+    if (!btn) return;
+    const act = btn.dataset.zoom;
+    if (act === 'in') zoomChart(1);
+    else if (act === 'out') zoomChart(-1);
+    else if (act === 'reset') resetZoomChart();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeChartModal();
+  });
+
+  window.addEventListener('popstate', function() {
+    if (document.getElementById('chartModal').classList.contains('show')) {
+      closeChartModal();
+    }
   });
 
   document.getElementById('btnExport').addEventListener('click', exportReport);
+
+  observeAllCards();
 
   let rt = null;
   window.addEventListener('resize', () => {
     clearTimeout(rt);
     rt = setTimeout(() => {
-      document.querySelectorAll('.chart').forEach(d => {
-        const inst = echarts.getInstanceByDom(d);
-        if (inst) inst.resize();
-      });
+      resizeAllCharts();
+      if (modalChartInst) modalChartInst.resize();
     }, 180);
   });
+
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      if (modalChartInst) modalChartInst.resize();
+    }, 350);
+  });
+
+  let scrollTimer = null;
+  window.addEventListener('scroll', () => {
+    if (scrollTimer) return;
+    scrollTimer = setTimeout(() => {
+      scrollTimer = null;
+      activateVisibleCards();
+    }, 120);
+  }, { passive: true });
 })();
 </script>
 </body>
